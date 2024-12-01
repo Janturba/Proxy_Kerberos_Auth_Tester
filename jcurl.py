@@ -4,14 +4,15 @@ import base64
 import time
 import winkerberos as kerberos
 import argparse
+import getpass
 
 def cliWrapper():
     parser = argparse.ArgumentParser(description="Kerberos Proxy AuthN Tester")
     parser.add_argument('-sh', '--host', type=str, default="www.example.com", help=f"Server Host IP/FQDN (default: www.example.com)")
     parser.add_argument('-sp', '--port', type=int, default=443, help="Server Port (default: 443)")
     parser.add_argument('-pr', '--protocol', type=str, default="https", help="HTTP vs HTTPS schema (default: https)")
-    parser.add_argument('-ps', '--proxy_server', type=str, default="1.1.1.1", help="Proxy IP/FQDN (default: 1.1.1.1)")
-    parser.add_argument('-s', '--spn', type=str, default="HTTP/spn.local", help="Service Principal Name (default: HTTP/spn.local)")
+    parser.add_argument('-ps', '--proxy_server', type=str, default="192.168.1.195", help="Proxy IP/FQDN (default: 192.168.1.195)")
+    parser.add_argument('-s', '--spn', type=str, default="HTTP/proxy.cloud.turbovci.co.uk", help="Service Principal Name (default: HTTP/proxy.cloud.turbovci.co.uk)")
     parser.add_argument('-pp', '--proxy_port', type=int, default="8080", help="Proxy Port (default: 8080)")
     parser.add_argument('-hm', '--http_method', type=str, default="GET", help="HTTP method (default: GET)")
     parser.add_argument('-hp', '--http_path', type=str, default="/", help="HTTP URI path (default: /)")
@@ -29,9 +30,18 @@ def get_kerb_token(sp):
     kerberos.authGSSClientClean(ctx)
     return token
 
-class proxyCall():
+def do_BASIC_AuthN():
+    user = input("Enter user: ")
+    passwd = getpass.getpass("Enter password: ")
+    creds = user + ":" + passwd
+    encodedBytes = base64.b64encode(creds.encode('utf-8'))
+    encodedString = encodedBytes.decode('utf-8')
+    encoded_creds = encodedString
+    return encoded_creds
 
-    def __init__(self, *args, tunneled="FALSE"):
+class proxyCall()::w
+
+    def __init__(self, *args, tunneled=False):
         self.HOST = args[0]
         self.PORT = args[1]
         self.PROXY = args[2]
@@ -175,6 +185,13 @@ class proxyCall():
                 reminder += len(chunk)   
         self.connect_response_parser(headers, body)  
 
+    def create_CONNECT(self, directive, creds):
+        __CONNECT_with_creds = f"CONNECT {self.HOST}:{self.PORT} HTTP/1.1\r\n" \
+                               f"HOST: {self.HOST}:{self.PORT}\r\n" \
+                               f"User-Agent: {self.CONNECT_UA}\r\n" \
+                               f"Proxy-Authorization: {directive} {creds}\r\n" \
+                               f"\r\n"
+        return __CONNECT_with_creds
 
     def do_CONNECT(self):
         __CONNECT = f"CONNECT {self.HOST}:{self.PORT} HTTP/1.1\r\n" \
@@ -186,21 +203,22 @@ class proxyCall():
 
     def do_CONNECT_with_auth(self):
         try:        
-            self.creds = get_kerb_token(self.spn)
-            __CONNECT_with_creds = f"CONNECT {self.HOST}:{self.PORT} HTTP/1.1\r\n" \
-                f"HOST: {self.HOST}:{self.PORT}\r\n" \
-                f"User-Agent: {self.CONNECT_UA}\r\n" \
-                f"Proxy-Authorization: Negotiate {self.creds}\r\n" \
-                f"\r\n"
-            self.connect_request_parser(__CONNECT_with_creds)
-            self.sock.send(__CONNECT_with_creds.encode())
+            krb_blob = get_kerb_token(self.spn)
+            connect = self.create_CONNECT(directive="Negotiate", creds=krb_blob)
+            self.connect_request_parser(connect)
+            self.sock.send(connect.encode())
             self.connect_handler()
         except Exception as kerberos_exception:
             print(kerberos_exception)
             self.kerberos_exception = kerberos_exception
+            creds = do_BASIC_AuthN()
+            connect = self.create_CONNECT(creds=creds, directive="BASIC")
+            self.connect_request_parser(connect)
+            self.sock.send(connect.encode())
+            self.connect_handler()
 
     def do_SSLhandshake(self):
-        if self.tunneled == "TRUE":
+        if self.tunneled:
             print(f"Starting tunnel ....")
             while True:
                 msg = f"foobar"
