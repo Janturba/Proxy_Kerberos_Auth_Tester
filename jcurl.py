@@ -39,7 +39,7 @@ def do_BASIC_AuthN():
     encoded_creds = encodedString
     return encoded_creds
 
-class proxyCall()::w
+class proxyCall():
 
     def __init__(self, *args, tunneled=False):
         self.HOST = args[0]
